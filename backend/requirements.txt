@@ -1,0 +1,10 @@
+fastapi[standard]
+sqlalchemy[asyncio]
+alembic
+asyncpg
+pydantic-settings
+
+# dev
+ruff
+pytest
+pytest-asyncio

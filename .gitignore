@@ -1,1 +1,22 @@
-CLAUDE.md
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.env
+
+# Node / Expo — path-agnostic so a renamed app directory stays covered
+node_modules/
+.expo/
+dist/
+npm-debug.log*
+*.tsbuildinfo
+
+# Superseded SDK 57 app, pending deletion once the editor releases its lock
+mobile-old-sdk57/
+
+# USDA bulk downloads — large, re-downloadable
+data/
+
+# OS
+.DS_Store
+Thumbs.db

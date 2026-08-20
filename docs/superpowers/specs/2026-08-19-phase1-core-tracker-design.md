@@ -65,8 +65,11 @@ concern only — converting at the boundary avoids the class of bug where stored
 ambiguous.
 
 ### `users`
-`id` (uuid, pk) · `email` (text, unique, stored lowercased) · `password_hash` · `created_at`
+`id` (uuid, pk) · `email` (text, unique, stored lowercased) · `external_auth_id` (text, unique,
+nullable) · `is_dev_stub` (bool, default false) · `created_at`
 
+**No `password_hash` column** — passwords are never stored here; see §4. `external_auth_id` holds
+the provider's subject claim once auth exists, and stays null for the seeded dev user.
 Email is normalized to lowercase in the service layer rather than using the `citext`
 extension — one fewer extension to enable, and the normalization is visible in code.
 
@@ -102,11 +105,6 @@ Index: `CREATE INDEX foods_search_trgm ON foods USING GIN (search_text gin_trgm_
 
 From USDA's portion data. Without it, users must enter everything in grams, which nobody does.
 
-### `refresh_tokens`
-`id` · `user_id` (fk) · `token_hash` · `expires_at` · `used_at` (nullable) · `created_at`
-
-Stored hashed, never in plaintext — a leaked database dump must not hand out live sessions.
-
 ### `food_entries`
 `id` · `user_id` (fk) · `fdc_id` (fk, **nullable** — Phase 2 AI-estimated items and future
 custom foods won't always have one) · `meal_type` (breakfast/lunch/dinner/snack) ·
@@ -131,19 +129,30 @@ One weigh-in per day; a second submission updates the existing row.
 
 ## 4. Auth
 
-- **Hashing:** `bcrypt` called directly. Not `passlib` — unmaintained and breaks against
-  bcrypt 4+, despite appearing in most FastAPI tutorials.
-- **Tokens:** short-lived access JWT (30 min) + long-lived refresh token (30 days).
-  Refresh tokens are stored hashed in a `refresh_tokens` table so they can be revoked;
-  a pure-stateless JWT setup has no logout that actually invalidates anything, which is a
-  poor fit for health data.
-- **Signing:** HS256 via `pyjwt`, secret from env. We hand-roll the auth *flow* — the
-  cryptographic primitives stay in a library.
-- **Client storage:** both tokens in `expo-secure-store` (OS keystore), never AsyncStorage.
-- **Protection:** a `current_user` FastAPI dependency resolves the bearer token to a user;
-  every non-auth route depends on it.
-- **Rotation:** refresh returns a new access token and rotates the refresh token, marking
-  the old one used. Reuse of a consumed refresh token revokes the whole family.
+**Phase 1 has no authentication.** A seeded dev user is returned unconditionally by the
+`current_user` dependency. Real auth is a managed cloud provider, added as its own milestone
+before anything is deployed.
+
+**Consequence, stated plainly:** the API is completely open in this state. Bind uvicorn to the
+LAN and never port-forward it or expose it through a public tunnel until auth is real.
+
+**Provider: deliberately undecided.** Microsoft Entra External ID (the Azure-native option),
+Clerk, and Auth0 all fit the same shape. These constraints are what keep every option cheap,
+and they are the part that matters now:
+
+- `current_user` is a **FastAPI dependency from M0**, even while it returns a constant.
+  Swapping the stub for real verification touches one function, not every route.
+- **Every service function takes `user_id` as an explicit parameter.** No module-level or
+  context-global "current user" — this is what keeps the retrofit to one line per route.
+- Users are keyed on `external_auth_id` (the provider's `sub` claim). We keep our own `users`
+  row regardless, because profiles, diary entries, and weights all foreign-key to it.
+- Verification will be **JWKS-based**: fetch the provider's public keys, verify signature,
+  issuer, and audience. Nothing signs tokens on our side.
+- Tokens live in `expo-secure-store` (OS keystore), never AsyncStorage.
+
+This replaces the hand-rolled JWT + bcrypt plan; CLAUDE.md is updated to match. The trade: less
+learned about auth internals, against no password storage to get wrong and password reset /
+email verification / MFA arriving for free rather than as three more milestones.
 
 ## 5. Nutrition data and search
 
@@ -222,19 +231,21 @@ physical device. *Proves the toolchain and, critically, that a phone can reach t
 this is where Windows firewall rules and LAN-IP-vs-localhost problems surface, and finding
 them now costs an hour instead of derailing a feature later.*
 
-**M1 — Auth.** Signup/login/refresh/logout endpoints, bcrypt, JWT, SecureStore, `current_user`
-dependency, login + signup screens, session persists across app restarts.
+**M1 — Food data.** USDA importer, `foods` + `food_portions` tables, GIN index, search endpoint,
+search screen with results and a food detail view.
 
-**M2 — Food data.** USDA importer, `foods` + `food_portions` tables, GIN index, search
-endpoint, search screen with results and a food detail view.
+**M2 — Diary.** `food_entries`, create/list/delete, portion picker, diary screen grouped by meal
+with running totals.
 
-**M3 — Diary.** `food_entries`, create/list/delete, portion picker, diary screen grouped by
-meal with running totals.
-
-**M4 — Goals.** Profile onboarding, TDEE + macro calculation, goals persisted, diary dashboard
+**M3 — Goals.** Profile onboarding, TDEE + macro calculation, goals persisted, diary dashboard
 showing remaining calories and macro progress.
 
-**M5 — Weight.** Weight entries, list + chart, progress tab.
+**M4 — Weight.** Weight entries, list + chart, progress tab.
+
+**M5 — Auth (gates deployment).** Choose the provider, add JWKS verification behind the existing
+`current_user` dependency, provider sign-in in the app, and a migration that either reassigns the
+dev user's rows to the first real account or discards them. **Nothing is exposed beyond the LAN
+until this milestone lands.**
 
 ## 11. Forward compatibility
 
@@ -255,7 +266,10 @@ preinstalled; `pg_trgm` ships as a bundled contrib module.
 
 **Backend** — Python 3.14, `venv` + `pip`. All verified to have cp314 wheels (2026-08-19):
 `fastapi[standard]` · `sqlalchemy[asyncio]` 2.0.52 · `alembic` 1.19.1 · `asyncpg` 0.31.0 ·
-`pydantic-settings` · `pyjwt` · `bcrypt` 5.0.0 · `ruff` · `pytest` + `pytest-asyncio`
+`pydantic-settings` · `ruff` · `pytest` + `pytest-asyncio`
+
+Added at the auth milestone, not before: `pyjwt` + `cryptography` for JWKS verification, and the
+chosen provider's Expo SDK. `bcrypt` is not needed at all now — no passwords are ever stored.
 
 **Mobile** — `create-expo-app` TypeScript template: `expo` · `expo-router` · `nativewind` +
 `tailwindcss` · `expo-secure-store` · `@tanstack/react-query` · `react-native-gifted-charts` +
