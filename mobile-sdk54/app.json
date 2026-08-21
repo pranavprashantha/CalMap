@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "mobile-sdk54",
-    "slug": "mobile-sdk54",
+    "name": "CalMap",
+    "slug": "calmap",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobilesdk54",
+    "scheme": "calmap",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
