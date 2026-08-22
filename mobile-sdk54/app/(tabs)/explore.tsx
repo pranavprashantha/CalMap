@@ -1,112 +1,144 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  useColorScheme,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { searchFoods, type FoodSearchResult } from '@/api/foods';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 
-export default function TabTwoScreen() {
+function round(value: string | null): string {
+  if (value === null) return '—';
+  return String(Math.round(Number(value)));
+}
+
+export default function SearchScreen() {
+  const isDark = useColorScheme() === 'dark';
+  const [text, setText] = useState('');
+  const debounced = useDebouncedValue(text);
+
+  const { data, error, isFetching } = useQuery({
+    queryKey: ['foods', 'search', debounced],
+    queryFn: () => searchFoods(debounced),
+    // A blank box should show nothing, not every food in the database.
+    enabled: debounced.trim().length > 0,
+    retry: false,
+  });
+
+  const palette = {
+    text: isDark ? '#ECEDEE' : '#11181C',
+    muted: isDark ? '#9BA1A6' : '#687076',
+    card: isDark ? '#1C1F21' : '#F1F3F5',
+    border: isDark ? '#2A2E31' : '#E1E4E8',
+  };
+
+  const renderItem = ({ item }: { item: FoodSearchResult }) => (
+    <View style={[styles.row, { borderBottomColor: palette.border }]}>
+      <Text style={[styles.name, { color: palette.text }]} numberOfLines={2}>
+        {item.food_name}
+      </Text>
+      <Text style={[styles.macros, { color: palette.muted }]}>
+        {round(item.calories_per_100g)} kcal · P {round(item.protein_per_100g)}g · C{' '}
+        {round(item.carbs_per_100g)}g · F {round(item.fat_per_100g)}g
+        <Text style={styles.per100}> per 100g</Text>
+      </Text>
+    </View>
+  );
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: palette.text }]}>Search foods</Text>
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          placeholder="chicken breast"
+          placeholderTextColor={palette.muted}
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+          style={[styles.input, { backgroundColor: palette.card, color: palette.text }]}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
+      </View>
+
+      {error ? (
+        <Text style={[styles.status, { color: palette.muted }]}>
+          Search failed — {error.message}
+        </Text>
+      ) : debounced.trim().length === 0 ? (
+        <Text style={[styles.status, { color: palette.muted }]}>
+          Type to search 8,000+ USDA foods.
+        </Text>
+      ) : isFetching && !data ? (
+        <ActivityIndicator style={styles.spinner} />
+      ) : data && data.length === 0 ? (
+        <Text style={[styles.status, { color: palette.muted }]}>
+          No foods matched “{debounced}”.
+        </Text>
+      ) : (
+        <FlatList
+          data={data}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderItem}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.list}
         />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  safeArea: {
+    flex: 1,
   },
-  titleContainer: {
-    flexDirection: 'row',
-    gap: 8,
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    gap: 12,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  input: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  status: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    fontSize: 14,
+  },
+  spinner: {
+    paddingTop: 32,
+  },
+  list: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  row: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  name: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  macros: {
+    fontSize: 13,
+  },
+  per100: {
+    fontStyle: 'italic',
   },
 });

@@ -6,8 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db import get_session
 from app.models.user import User
+from app.routers import foods
 
 app = FastAPI(title="CalMap API")
+
+app.include_router(foods.router)
 
 
 class HealthResponse(BaseModel):

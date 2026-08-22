@@ -13,6 +13,6 @@ class Base(DeclarativeBase):
     """Declarative base. Every model imports this so Alembic autogenerate sees them."""
 
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_session() -> AsyncGenerator[AsyncSession]:
     async with SessionLocal() as session:
         yield session

@@ -23,12 +23,24 @@ class Food(Base):
         # duplicating. Scoped to (source, external_id) because an fdc_id and an OFF
         # barcode can collide numerically while meaning different things.
         UniqueConstraint("source", "external_id", name="uq_foods_source_external_id"),
-        Index("idx_foods_name_trgm", text("food_name gin_trgm_ops"), postgresql_using="gin"),
+        Index(
+            "idx_foods_name_trgm",
+            "food_name",
+            postgresql_using="gin",
+            postgresql_ops={"food_name": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'usda'"))
     external_id: Mapped[str | None] = mapped_column(Text)
+
+    # Which USDA dataset this came from, stored raw: 'foundation_food',
+    # 'sr_legacy_food', 'branded_food'. Null for non-USDA sources. Search ranks on
+    # this so that importing Branded later does not bury the generic result — a
+    # query for "chicken breast" should not return forty store-brand fillets first.
+    data_type: Mapped[str | None] = mapped_column(Text)
+
     food_name: Mapped[str] = mapped_column(Text, nullable=False)
     brand_name: Mapped[str | None] = mapped_column(Text)
     barcode: Mapped[str | None] = mapped_column(Text, unique=True)
@@ -47,6 +59,41 @@ class Food(Base):
     )
 
 
+class FoodPortion(Base):
+    """Household measures for a food: "1 cup" = 158g, "1 slice" = 28g.
+
+    People log "a cup of rice", not "158 grams", so the logging UI needs real
+    choices rather than one default. This is also where a vision model's portion
+    estimate lands in Phase 2 — "about a cup" maps to a row here, not to grams.
+
+    `amount` and `unit` are kept alongside `description` so the UI can format or
+    scale a portion ("2 cups") instead of only displaying USDA's label verbatim.
+    """
+
+    __tablename__ = "food_portions"
+    __table_args__ = (
+        # Idempotent import: re-running updates rows rather than duplicating them.
+        UniqueConstraint("food_id", "external_id", name="uq_food_portions_food_external"),
+        Index("idx_food_portions_food_id", "food_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    food_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("foods.id", ondelete="CASCADE"), nullable=False
+    )
+    external_id: Mapped[str | None] = mapped_column(Text)
+
+    amount: Mapped[float | None] = mapped_column(Numeric(9, 3))
+    unit: Mapped[str | None] = mapped_column(Text)
+    modifier: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    gram_weight: Mapped[float] = mapped_column(Numeric(9, 2), nullable=False)
+
+    # USDA's display order. Lowest sequence is the most conventional portion and
+    # makes a reasonable default selection in the UI.
+    seq_num: Mapped[int | None] = mapped_column(Integer)
+
+
 class FoodAlias(Base):
     """Solves "the model said 'soda', the database says 'Carbonated Soft Drink'".
 
@@ -57,7 +104,12 @@ class FoodAlias(Base):
     __tablename__ = "food_aliases"
     __table_args__ = (
         UniqueConstraint("alias", "food_id", name="uq_food_aliases_alias_food"),
-        Index("idx_food_aliases_alias_trgm", text("alias gin_trgm_ops"), postgresql_using="gin"),
+        Index(
+            "idx_food_aliases_alias_trgm",
+            "alias",
+            postgresql_using="gin",
+            postgresql_ops={"alias": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

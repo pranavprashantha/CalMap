@@ -5,7 +5,7 @@ empty schema and happily writes a migration that drops all your tables.
 """
 
 from app.models.diary import FoodEntry
-from app.models.food import Food, FoodAlias
+from app.models.food import Food, FoodAlias, FoodPortion
 from app.models.photo import PhotoScan, PhotoScanItem
 from app.models.rag import MealHistoryEmbedding
 from app.models.recipe import Recipe, RecipeIngredient
@@ -18,6 +18,7 @@ __all__ = [
     "Food",
     "FoodAlias",
     "FoodEntry",
+    "FoodPortion",
     "MealHistoryEmbedding",
     "PhotoScan",
     "PhotoScanItem",
